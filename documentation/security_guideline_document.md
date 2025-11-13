@@ -1,116 +1,133 @@
-# Security Guidelines for codeguide-starter
+# Security Guidelines for Idea Capture Hub
 
-This document defines mandatory security principles and implementation best practices tailored to the **codeguide-starter** repository. It aligns with Security-by-Design, Least Privilege, Defense-in-Depth, and other core security tenets. All sections reference specific areas of the codebase (e.g., `/app/api/auth/route.ts`, CSS files, environment configuration) to ensure practical guidance.
-
----
-
-## 1. Security by Design
-
-• Embed security from day one: review threat models whenever adding new features (e.g., new API routes, data fetching).
-• Apply “secure defaults” in Next.js configuration (`next.config.js`), enabling strict mode and disabling debug flags in production builds.
-• Maintain a security checklist in your PR template to confirm that each change has been reviewed against this guideline.
+This document provides comprehensive security guidelines tailored for the "Idea Capture Hub" Next.js full-stack starter template and its extension into the "AI-assisted Idea Recording Document" application. It aligns with established security principles to ensure robust, resilient, and maintainable protection throughout your development lifecycle.
 
 ---
 
-## 2. Authentication & Access Control
+## 1. Overview & Threat Model
 
-### 2.1 Password Storage
-- Use **bcrypt** (or Argon2) with a per-user salt to hash passwords in `/app/api/auth/route.ts`.
-- Enforce a strong password policy on both client and server: minimum 12 characters, mixed case, numbers, and symbols.
+**Purpose:** Protect user data and AI interactions in the Idea Capture Hub, a private idea management tool with AI-powered business model suggestions.
 
-### 2.2 Session Management
-- Issue sessions via Secure, HttpOnly, SameSite=strict cookies. Do **not** expose tokens to JavaScript.
-- Implement absolute and idle timeouts. For example, invalidate sessions after 30 minutes of inactivity.
-- Protect against session fixation by regenerating session IDs after authentication.
+**Primary Assets:**
+- User credentials and sessions
+- Usergenerated ideas (product, customer, business model)
+- AI service API keys and responses
+- PostgreSQL database containing sensitive PII
 
-### 2.3 Brute-Force & Rate Limiting
-- Apply rate limiting at the API layer (e.g., using `express-rate-limit` or Next.js middleware) on `/api/auth` to throttle repeated login attempts.
-- Introduce exponential backoff or temporary lockout after N failed attempts.
-
-### 2.4 Role-Based Access Control (Future)
-- Define user roles in your database model (e.g., `role = 'user' | 'admin'`).
-- Enforce server-side authorization checks in every protected route (e.g., in `dashboard/layout.tsx` loader functions).
-
----
-
-## 3. Input Handling & Processing
-
-### 3.1 Validate & Sanitize All Inputs
-- On **client** (`sign-up/page.tsx`, `sign-in/page.tsx`): perform basic format checks (email regex, password length).
-- On **server** (`/app/api/auth/route.ts`): re-validate inputs with a schema validator (e.g., `zod`, `Joi`).
-- Reject or sanitize any unexpected fields to prevent injection attacks.
-
-### 3.2 Prevent Injection
-- If you introduce a database later, always use parameterized queries or an ORM (e.g., Prisma) rather than string concatenation.
-- Avoid dynamic `eval()` or template rendering with unsanitized user input.
-
-### 3.3 Safe Redirects
-- When redirecting after login or logout, validate the target against an allow-list to prevent open redirects.
+**Key Threats:**
+- Unauthorized access to user dashboards or data
+- Injection attacks via form endpoints or AI prompt parameters
+- Exposure or leakage of AI API credentials
+- CSRF, XSS, clickjacking against the dashboard UI
+- Man-in-the-middle on API calls (to AI service or database)
+- Dependency vulnerabilities in Node.js, Next.js, and ORMs
 
 ---
 
-## 4. Data Protection & Privacy
+## 2. Core Security Principles
 
-### 4.1 Encryption & Secrets
-- Enforce HTTPS/TLS 1.2+ for all front-end ↔ back-end communications.
-- Never commit secrets—use environment variables and a secrets manager (e.g., AWS Secrets Manager, Vault).
-
-### 4.2 Sensitive Data Handling
-- Do ​not​ log raw passwords, tokens, or PII in server logs. Mask or redact any user identifiers.
-- If storing PII in `data.json` or a future database, classify it and apply data retention policies.
-
----
-
-## 5. API & Service Security
-
-### 5.1 HTTPS Enforcement
-- In production, redirect all HTTP traffic to HTTPS (e.g., via Vercel’s redirect rules or custom middleware).
-
-### 5.2 CORS
-- Configure `next.config.js` or API middleware to allow **only** your front-end origin (e.g., `https://your-domain.com`).
-
-### 5.3 API Versioning & Minimal Exposure
-- Version your API routes (e.g., `/api/v1/auth`) to handle future changes without breaking clients.
-- Return only necessary fields in JSON responses; avoid leaking internal server paths or stack traces.
+1. Security by Design: Embed controls early in UI, API routes, and infra.
+2. Least Privilege: Grant minimal permissions to database users, API credentials, and hosting roles.
+3. Defense in Depth: Combine network, application, and data protection layers.
+4. Input Validation & Output Encoding: Treat all user input as untrusted; sanitize and encode accordingly.
+5. Fail Securely: Default to deny on errors; avoid leaking stack traces or internal details.
+6. Secure Defaults: Enable secure Next.js headers, strict CORS, and locked-down Docker settings.
+7. Keep Security Simple: Favor well-supported libraries (Zod, Drizzle ORM) and declarative configurations.
 
 ---
 
-## 6. Web Application Security Hygiene
+## 3. Authentication & Access Control
 
-### 6.1 CSRF Protection
-- Use anti-CSRF tokens for any state-changing API calls. Integrate Next.js CSRF middleware or implement synchronizer tokens stored in cookies.
-
-### 6.2 Security Headers
-- In `next.config.js` (or a custom server), add these headers:
-  - `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
-  - `X-Content-Type-Options: nosniff`
-  - `X-Frame-Options: DENY`
-  - `Referrer-Policy: no-referrer-when-downgrade`
-  - `Content-Security-Policy`: restrict script/style/src to self and trusted CDNs.
-
-### 6.3 Secure Cookies
-- Set `Secure`, `HttpOnly`, `SameSite=Strict` on all cookies. Avoid storing sensitive data in `localStorage`.
-
-### 6.4 Prevent XSS
-- Escape or encode all user-supplied data in React templates. Avoid `dangerouslySetInnerHTML` unless content is sanitized.
+- **Library Choice:** Continue using `better-auth` (or migrate to NextAuth.js) with strong session management:
+  - Set `HttpOnly`, `Secure`, `SameSite=Strict` on session cookies.
+  - Implement idle and absolute session timeouts.
+  - Rotate session identifiers after privilege changes (e.g., MFA enablement).
+- **Password Storage:** Use bcrypt or Argon2 with per-user salts; enforce minimum length (e.g., 12 chars) and complexity.
+- **Multi-Factor Authentication (MFA):** Provide optional TOTP or SMS/Email-based second factors for high-sensitivity accounts.
+- **RBAC:** Define roles (e.g., `user`, `admin`) in your Drizzle schema; enforce server-side checks in every API route:
+  ```ts
+  if (session.user.role !== 'user') throw new NextResponse('Unauthorized', { status: 403 });
+  ```
+- **Authorization Checks:** For `/api/ideas` endpoints, validate that `idea.userId === session.user.id` before read/update/delete.
 
 ---
 
-## 7. Infrastructure & Configuration Management
+## 4. Input Handling & Processing
 
-- Harden your hosting environment (e.g., Vercel/Netlify) by disabling unnecessary endpoints (GraphQL/GraphiQL playgrounds in production).
-- Rotate secrets and API keys regularly via your secrets manager.
-- Maintain minimal privileges: e.g., database accounts should only have read/write on required tables.
-- Keep Node.js, Next.js, and all system packages up to date.
-
----
-
-## 8. Dependency Management
-
-- Commit and maintain `package-lock.json` to guarantee reproducible builds.
-- Integrate a vulnerability scanner (e.g., GitHub Dependabot, Snyk) to monitor and alert on CVEs in dependencies.
-- Trim unused packages; each added library increases the attack surface.
+- **Schema Validation:** Use Zod in every API route to parse and validate request bodies:
+  ```ts
+  const IdeaSchema = z.object({ product: z.string().min(1), customer: z.string().min(1), businessModel: z.string().min(1) });
+  ```
+- **Prevent Injection:** Drizzle ORM with parameterized queries prevents SQL injection. Do not interpolate raw strings in query builders.
+- **Sanitize AI Prompts:** Strip control characters and limit prompt length to avoid prompt-injection or resource exhaustion.
+- **Output Encoding:** When rendering user content, rely on Reactescaped outputs. If using `dangerouslySetInnerHTML`, sanitize via DOMPurify.
+- **File Uploads (if added):** Validate MIME types, set size limits, store outside the web root, and scan for malware.
 
 ---
 
-Adherence to these guidelines will ensure that **codeguide-starter** remains secure, maintainable, and resilient as it evolves. Regularly review and update this document to reflect new threats and best practices.
+## 5. Data Protection & Privacy
+
+- **Transport Encryption:** Enforce HTTPS everywhere (Next.js `redirect` to TLS, HSTS header with `max-age=63072000; includeSubDomains; preload`).
+- **At-Rest Encryption:** Rely on managed PostgreSQL encryption or disk-level encryption.
+- **Secret Management:** Store AI API keys and database credentials in environment variables or a vault (e.g., AWS Secrets Manager). Do _not_ commit `.env` files.
+- **Least-Privilege DB User:** Create a dedicated database user with only CRUD rights on `ideas` and `users` tables; no superuser or schema modification privileges.
+- **Masking & Logging:** Redact PII (user emails, idea text) in logs. Use a structured logger (e.g., Pino) configured to omit sensitive fields.
+
+---
+
+## 6. API & Service Security
+
+- **Route Protection:** Apply middleware in `middleware.ts` to enforce authentication on `/dashboard` and all `/api/` routes.
+- **Rate Limiting:** Use a serverless-friendly rate limiter (e.g., Upstash + Redis) to throttle `/api/ai/suggest` and login attempts.
+- **CORS:** In `next.config.js`, restrict allowed origins to your front-end host and trusted domains only.
+- **CSRF Protection:** Implement the synchronizer token pattern (e.g., `@nextjs/csrf` or `next-csrf`) for state-changing POST/PUT/DELETE requests.
+- **Use Correct Verbs:** GET for reads, POST for creates and AI queries, PUT/PATCH for updates, DELETE for removals.
+- **API Versioning:** Namespace critical endpoints (e.g., `/api/v1/ideas`) to allow safe evolution.
+
+---
+
+## 7. Web Application Security Hygiene
+
+- **Security Headers:** Configure with `next-secure-headers` or custom `headers()` in Next.js:
+  - `Content-Security-Policy` to restrict scripts, styles, and frame sources.
+  - `X-Frame-Options: DENY` to prevent clickjacking.
+  - `X-Content-Type-Options: nosniff`.
+  - `Referrer-Policy: strict-origin-when-cross-origin`.
+- **Subresource Integrity:** Add SRI hashes for any third-party scripts loaded via CDN.
+- **Client-Side Storage:** Avoid storing tokens or PII in `localStorage`; rely on secure, HttpOnly cookies.
+
+---
+
+## 8. Infrastructure & Deployment Security
+
+- **Container Hardening:**
+  - Use minimal base images (e.g., Alpine-based Node.js) with only required packages.
+  - Drop Linux capabilities; run as non-root user inside the container.
+- **TLS Configuration:** Ensure Vercel or your load balancer enforces TLS 1.2+ and strong cipher suites.
+- **Environment Isolation:** Separate dev, staging, and production environments, each with distinct secrets and DB instances.
+- **Disable Debug in Production:** Ensure `NEXT_PUBLIC_` environment flags and `process.env.NODE_ENV !== 'production'` checks disable verbose logging and dev tools.
+- **Automated Updates:** Regularly rebuild Docker images when base images or dependencies release security patches.
+
+---
+
+## 9. Dependency Management
+
+- **Use Lockfiles:** Commit `package-lock.json` or `yarn.lock` for reproducible builds.
+- **Vulnerability Scanning:** Integrate SCA tools (e.g., GitHub Dependabot, Snyk) to auto-detect CVEs in direct and transitive dependencies.
+- **Minimum Footprint:** Only install dependencies you actively use (prune test or build-only packages from production images).
+- **Review Third-Party Modules:** Vet the security posture and maintenance activity of UI libraries, ORMs, and AI SDKs before adoption.
+
+---
+
+## 10. Monitoring & Incident Response
+
+- **Logging & Alerting:** Centralize logs (e.g., in Datadog or Elastic) and alert on abnormal login patterns, rate limit triggers, or 5xx spikes.
+- **Audit Trails:** Record CRUD operations on ideas with timestamps and user context.
+- **Incident Plan:** Define procedures for key compromise (e.g., rotate AI service keys, force password resets).
+- **Periodic Reviews:** Schedule quarterly security reviews of code, infra, and dependencies.
+
+---
+
+## Conclusion
+
+By following these security guidelines—grounded in secure defaults, least privilege, and defense in depth—you will harden the Idea Capture Hub and its AI-assisted features against common threats. Security is an ongoing process; regularly revisit your controls as the codebase and threat landscape evolve.
